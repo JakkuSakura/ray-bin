@@ -1,0 +1,9 @@
+[package]
+name = "rust_sma"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+clickhouse = {version="0.13.1",features = ["test-util"]}
+serde = {version="1.0.215",features=["derive"]}
+tokio = {version="1.41.1",features=["full"]}

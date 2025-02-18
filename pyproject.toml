@@ -1,0 +1,13 @@
+[project]
+name = "raybin"
+version = "0.1.0"
+description = "Dispatch binaries workloads over ray"
+authors = [
+    { name = "JakkuSakura", email = "qjk2001@gmail.com" }
+]
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "ray[all]>=2.42.0,<3.0",
+    "whenever>=0.6.13,<0.7"
+]
