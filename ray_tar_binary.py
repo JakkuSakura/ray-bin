@@ -11,8 +11,11 @@ from pydantic import BaseModel
 from io import BytesIO
 from typing import List, Any, Sequence, Iterator, Tuple, BinaryIO, Optional
 
-logger = logging.getLogger('ray_tar_binary')
+# ============================================================
+# Logger settings
+# ============================================================
 
+logger = logging.getLogger('ray_tar_binary')
 
 def setup_logging():
     def formatTime(self, record, datefmt=None):
@@ -24,6 +27,9 @@ def setup_logging():
                         format='%(asctime)s - %(levelname)s - %(message)s')
     logger.info('Logging setup successfully')
 
+# ============================================================
+# File and tar function
+# ============================================================
 
 def try_files(base_dir: str, files: List[str]) -> Optional[str]:
     """
@@ -37,7 +43,6 @@ def try_files(base_dir: str, files: List[str]) -> Optional[str]:
             return file
     return None
 
-
 def copy_file(src_file: str, dest_file: str):
     """
     Copy a file from source to destination.
@@ -49,17 +54,57 @@ def copy_file(src_file: str, dest_file: str):
     os.makedirs(os.path.dirname(dest_file), exist_ok=True)
     shutil.copy(src_file, dest_file)
 
+def temp_tarball_file(name: str) -> tempfile._TemporaryFileWrapper:
+    """
+    Create a tarball name from the package name. with a rantom number
+    :param name:
+    :return:
+    """
+    return tempfile.NamedTemporaryFile(prefix=name, suffix='.tar.gz')
 
-class RemoteTask:
-    def __init__(self, object_ref):
-        self.object_ref: ray.ObjectRef = object_ref
+def create_tarball(output_file: BinaryIO, workdir: str, excludes: list = None):
+    """Create a .tar.gz archive of the source directory, excluding specified files."""
+    if excludes is None:
+        excludes = []
+    logger.info(f"Creating tarball from %s, excluding %s", workdir, excludes)
+    try:
+        with tarfile.open(fileobj=output_file, mode="w:gz") as tar:
+            for item in os.listdir(workdir):
+                if item in excludes:
+                    continue
+                tar.add(os.path.join(workdir, item), arcname=item)
+        logger.info(f"Tarball for %s created successfully.", workdir)
+    except Exception as e:
+        logger.error(f"Failed to create tarball: {e}")
+        raise
 
-    def ref(self):
-        return self.object_ref
+def create_temp_tarball(workdir: str, excludes: list = None) -> BinaryIO:
+    temp_file = temp_tarball_file(os.path.basename(workdir))
+    create_tarball(temp_file, workdir, excludes)
+    temp_file.seek(0)
+    return temp_file
 
-    def get(self):
-        return ray.get(self.object_ref)
+def extract_tarball(tarball: BinaryIO | bytes, dest: str):
+    """Extract a tarball to a specified destination."""
+    if isinstance(tarball, bytes):
+        tarball = BytesIO(tarball)
 
+    logger.info(f"Extracting tarball at: {dest}")
+
+    with tarfile.open(fileobj=tarball, mode='r:gz') as tar:
+        tar.extractall(dest)
+
+    logger.info(f"Tarball extracted to: {dest}")
+
+def extract_temp_tarball(tarball: BinaryIO | bytes, prefix: str = None) -> str:
+    extract_dir = tempfile.mkdtemp(prefix=prefix)
+    print(f"Temporary directory created at: {extract_dir}")
+    extract_tarball(tarball, extract_dir)
+    return extract_dir
+
+# ============================================================
+# Ray task packaging class and method
+# ============================================================
 
 DEFAULT_HOST = "127.0.0.1"
 DEFAULT_LISTEN = "0.0.0.0"
@@ -80,6 +125,17 @@ class RayConfig(BaseModel):
 
     def address(self):
         return f"{self.host}:{self.port}"
+
+
+class RemoteTask:
+    def __init__(self, object_ref):
+        self.object_ref: ray.ObjectRef = object_ref
+
+    def ref(self):
+        return self.object_ref
+
+    def get(self):
+        return ray.get(self.object_ref)
 
 
 class RayTaskClient:
@@ -123,59 +179,10 @@ class RayTaskClient:
     def get(self, object_ref):
         return ray.get(object_ref)
 
-
-def temp_tarball_file(name: str) -> tempfile._TemporaryFileWrapper:
-    """
-    Create a tarball name from the package name. with a rantom number
-    :param name:
-    :return:
-    """
-    return tempfile.NamedTemporaryFile(prefix=name, suffix='.tar.gz')
-
-
-def create_tarball(output_file: BinaryIO, workdir: str, excludes: list = None):
-    """Create a .tar.gz archive of the source directory, excluding specified files."""
-    if excludes is None:
-        excludes = []
-    logger.info(f"Creating tarball from %s, excluding %s", workdir, excludes)
-    try:
-        with tarfile.open(fileobj=output_file, mode="w:gz") as tar:
-            for item in os.listdir(workdir):
-                if item in excludes:
-                    continue
-                tar.add(os.path.join(workdir, item), arcname=item)
-        logger.info(f"Tarball for %s created successfully.", workdir)
-    except Exception as e:
-        logger.error(f"Failed to create tarball: {e}")
-        raise
-
-
-def create_temp_tarball(workdir: str, excludes: list = None) -> BinaryIO:
-    temp_file = temp_tarball_file(os.path.basename(workdir))
-    create_tarball(temp_file, workdir, excludes)
-    temp_file.seek(0)
-    return temp_file
-
-
-def extract_tarball(tarball: BinaryIO | bytes, dest: str):
-    """Extract a tarball to a specified destination."""
-    if isinstance(tarball, bytes):
-        tarball = BytesIO(tarball)
-
-    logger.info(f"Extracting tarball at: {dest}")
-
-    with tarfile.open(fileobj=tarball, mode='r:gz') as tar:
-        tar.extractall(dest)
-
-    logger.info(f"Tarball extracted to: {dest}")
-
-
-def extract_temp_tarball(tarball: BinaryIO | bytes, prefix: str = None) -> str:
-    extract_dir = tempfile.mkdtemp(prefix=prefix)
-    print(f"Temporary directory created at: {extract_dir}")
-    extract_tarball(tarball, extract_dir)
-    return extract_dir
-
+# ============================================================
+# The logic of uploading the tar to ray's storage, and decompress
+# the tar and execute the program in '_decompress_and_run_executable'
+# ============================================================
 
 @ray.remote
 def _decompress_and_run_executable(tarball: bytes, executable: str, args: Sequence[str]) -> None:
@@ -213,45 +220,3 @@ def dispatch_binary_task(scheduler: RayTaskClient, workdir: str, executable: str
                                    } for args1 in (args or [[]])]
                                )
     return tasks
-
-
-class RayTaskClient:
-    def __init__(self, scheduler: RayConfig):
-        self.scheduler = scheduler
-        if not ray.is_initialized():
-            ray.init(address=scheduler.address())
-
-    def check(self):
-        return ray.is_initialized()
-
-    def stop(self):
-        ray.shutdown()
-
-    def ensure_remote(self, func):
-        if isinstance(func, ray.remote_function.RemoteFunction):
-            return func
-        return ray.remote(func)
-
-    def submit(self, func, *args, **kwargs) -> RemoteTask:
-        remote_fn = self.ensure_remote(func)
-        remote_ref = remote_fn.remote(*args, **kwargs)
-        return RemoteTask(remote_ref)
-
-    def dispatch(self, func, args: List[Sequence[Any]] = None, kwargs: List[dict] = None) -> List[RemoteTask]:
-        assert args is not None or kwargs is not None, 'args and kwargs should not be both None'
-        if args is None:
-            args = [[] for _ in range(len(kwargs))]
-        if kwargs is None:
-            kwargs = [{} for _ in range(len(args))]
-        assert len(args) == len(kwargs), 'args and kwargs should have the same length'
-        remote_fn = self.ensure_remote(func)
-        remote_refs = [remote_fn.remote(*arg, **kwarg) for arg, kwarg in zip(args, kwargs)]
-        return [RemoteTask(ref) for ref in remote_refs]
-
-    def join(self, tasks: List[RemoteTask] | RemoteTask):
-        if isinstance(tasks, RemoteTask):
-            return tasks.get()
-        return ray.get([task.ref() for task in tasks])
-
-    def get(self, object_ref):
-        return ray.get(object_ref)

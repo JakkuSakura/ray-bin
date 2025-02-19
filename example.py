@@ -11,6 +11,8 @@ logger = logging.getLogger('example')
 
 
 def demo():
+
+    # The rust/c/cpp binary executable file's arguments and file's path
     number_1: int = 9
     number_2: int = 6
     exe_path = "examples/rust_demo/target/debug/rust_demo"
@@ -25,7 +27,7 @@ def demo():
 
     # the rust/c/cpp binary executable file's arguments
     args_list = []
-    # if your rust/c/cpp binary executable file has no arguments(e.g. example/hello project),just comment out the following line
+    # if your rust/c/cpp binary executable file has no arguments(e.g. examples/hello project),just comment out the following line
     args_list.append((str(number_1), str(number_2)))
 
     scheduler = RayTaskClient(RayConfig.default_client())
