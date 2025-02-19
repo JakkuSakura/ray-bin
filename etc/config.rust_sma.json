@@ -1,7 +1,0 @@
-{
-  "start_time": "2024-12-06",
-  "end_time": "2024-12-06",
-  "interval": 1,
-  "exe_path": "examples/rust_sma/target/debug/rust_sma",
-  "config_path": "etc/config.rust_sma.json"
-}
