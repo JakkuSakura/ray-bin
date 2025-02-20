@@ -5,13 +5,12 @@ import tempfile
 
 import ray
 
-from ray_tar_binary import try_files, copy_file, RayTaskClient, RayConfig, dispatch_binary_task, setup_logging
+from ray_bin import try_files, copy_file, RayTaskClient, RayConfig, dispatch_binary_task
 
 logger = logging.getLogger('example')
 
 
 def demo():
-
     # The rust/c/cpp binary executable file's arguments and file's path
     number_1: int = 9
     number_2: int = 6
@@ -38,6 +37,6 @@ def demo():
 
 
 if __name__ == '__main__':
-    setup_logging()
+    logging.basicConfig(level=logging.INFO)
     ray.init()
     demo()
