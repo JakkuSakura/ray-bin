@@ -172,3 +172,5 @@ cython_debug/
 
 # ignore PyCharm generative files
 .idea/
+
+.venv
